@@ -11,7 +11,7 @@ class DoorOpener(Node):
     def __init__(self):
         super().__init__('door_opener')
         self.log = self.get_logger()
-        self.timer = self.create_timer(heartbeat_period, self.heartbeat)
+        #self.timer = self.create_timer(heartbeat_period, self.heartbeat)
         self.door_pub = self.create_publisher(Float64, '/hinged_glass_door/torque', 5)
         self.cmd_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self.declare_parameter ('forward_speed', 0.7)
@@ -21,13 +21,18 @@ class DoorOpener(Node):
         self.state = "Open_door"
         self.start_time = self.get_clock().now()
 
-    def heartbeat(self):
+        #Subscription
+        self.feature = self.create_subscription(Float64, '/feature_mean', self.heartbeat, 10)
+        self.feature
+
+
+    def heartbeat(self, msg):
         self.log.info('heartbeat')
         elapsed = (self.get_clock().now() - self.start_time).nanoseconds * 1e-9
         
         if self.state == "Open_door":
             self.door_pub.publish(Float64(data=5.0))
-            if elapsed > 3.0:
+            if msg.data <265.0:
                 self._next("Move_Forward")
 
         elif self.state == "Move_Forward":
