@@ -49,7 +49,7 @@ class DoorOpener(Node):
             self.door_pub.publish(Float64(data=-5.0))
             if elapsed > 3.0:
                 self.get_logger().info("Mission Done")
-                self.timer.cancel()
+                #self.timer.cancel()
 
     def _next(self, new_state):
         self.state = new_state
