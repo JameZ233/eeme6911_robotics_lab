@@ -33,6 +33,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'odom = odom.odom:main',
             'door_opener_truck = door_opener_truck.door_opener_truck:main',
             'door_opener = door_opener.door_opener:main',
             'image_mean_feature_x = image_mean_feature_x.image_mean_feature_x:main',

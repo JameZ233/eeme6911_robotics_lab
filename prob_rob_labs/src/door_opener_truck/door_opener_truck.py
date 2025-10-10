@@ -1,7 +1,7 @@
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
-from std_msgs.msg import Float64
+from std_msgs.msg import Float64, Bool
 import time
 
 
@@ -21,20 +21,43 @@ class DoorThresholdStatistics(Node):
         self.timeframe = self.get_parameter('time_frame').get_parameter_value().double_value
         self.declare_parameter ('truth', 'closed')
         self.truth = self.get_parameter('truth').value
+        self.declare_parameter('mode','bayes')
+        self.mode = self.get_parameter('mode').value
+
+        self.declare_parameter('previous_open', 0.5)
+        self.p_open = self.get_parameter('previous_open').get_parameter_value().double_value
+        self.declare_parameter('openopen', 0.9966777)
+        self.oo = self.get_parameter('openopen').get_parameter_value().double_value
+        self.declare_parameter('closeopen', 0.0033223)
+        self.co = self.get_parameter('closeopen').get_parameter_value().double_value   
+        self.declare_parameter('gothreshold', 0.99999)
+        self.gothreshold = self.get_parameter('gothreshold').get_parameter_value().double_value     
         # assert self.truth in ('open', 'closed')
 
         #Subscription
-        self.door_pub = self.create_publisher(Float64, '/hinged_glass_door/torque', 5)
         self.feature = self.create_subscription(Float64, '/feature_mean', self.collect_data, 10)
+        self.belief = self.create_publisher(Float64, '/door_belief', 10)
+        self.decision = self.create_publisher(Bool, '/door_decision', 10)
         self.feature
 
         self.start = time.time()
         self.sum_up = 0
         self.sum_below = 0
+        self.decided = False
 
-
+        self.log.info(f"Mode={self.mode}")
+        if self.mode =='bayes':
+            self.log.info(f"prior_open={self.p_open:.4f} openopen={self.oo:.6f} closeopen={self.co:.6f}"
+                          f"decision_threshold={self.gothreshold}")
     def collect_data(self, msg):
         val = msg.data
+        if self.mode == 'estimate':
+            self._estimation(val)
+        else:
+            self._bayes_filter()
+    
+    def _estimation(self, val):
+
         if val >= self.threshold:
             self.sum_up += 1
         else:
@@ -48,36 +71,25 @@ class DoorThresholdStatistics(Node):
 
             rclpy.shutdown()
 
+    def _bayes_filter(self):
+        z_open = True
+        p = self.p_open
+        if z_open:
+            num = self.oo *p
+            den = self.oo*p + self.co * (1-p)
+        else:
+            num = (1-self.oo) * p
+            den = (1-self.oo) * p + (1-self.co) * (1-p)
 
-    # def heartbeat(self, msg):
-    #     self.log.info('heartbeat')
-    #     elapsed = (self.get_clock().now() - self.start_time).nanoseconds * 1e-9
-        
-    #     if self.state == "Open_door":
-    #         self.door_pub.publish(Float64(data=5.0))
-    #         if msg.data <265.0:
-    #             self._next("Move_Forward")
+        self.p_open = num / den if den>0 else p
+        self.belief.publish(Float64(data=self.p_open))
+        decision = (self.p_open >= self.gothreshold)
+        self.decision.publish(Bool(data=decision))
+        self.get_logger().info(f"Z = open | belief = {self.p_open:.8f} | decision to go={decision}")
 
-    #     elif self.state == "Move_Forward":
-    #         twist = Twist(); twist.linear.x = self.speed
-    #         self.cmd_pub.publish(twist)
-    #         if elapsed >7.0:
-    #             self._next("STOP")
+        if decision:
+            self.decide=True
 
-    #     elif self.state == "STOP":
-    #         self.cmd_pub.publish(Twist())
-    #         self._next("Closed_door")
-
-    #     elif self.state == "Closed_door":
-    #         self.door_pub.publish(Float64(data=-5.0))
-    #         if elapsed > 3.0:
-    #             self.get_logger().info("Mission Done")
-    #             #self.timer.cancel()
-
-    def _next(self, new_state):
-        self.state = new_state
-        self.start_time = self.get_clock().now()
-        self.get_logger().info(f"Switch to {new_state}")
 
 
     def spin(self):
