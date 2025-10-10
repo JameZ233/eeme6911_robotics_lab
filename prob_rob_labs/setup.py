@@ -33,6 +33,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'bayes_estimator = bayes_estimator.bayes_estimator:main',
             'odom = odom.odom:main',
             'door_opener_truck = door_opener_truck.door_opener_truck:main',
             'door_opener = door_opener.door_opener:main',
