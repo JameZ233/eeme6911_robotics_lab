@@ -32,7 +32,7 @@ class DoorOpener(Node):
         
         if self.state == "Open_door":
             self.door_pub.publish(Float64(data=5.0))
-            if msg.data <265.0:
+            if msg.data <287.5:
                 self._next("Move_Forward")
 
         elif self.state == "Move_Forward":
