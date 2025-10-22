@@ -4,6 +4,7 @@ from rclpy.qos import QoSProfile
 from rclpy.clock import Clock
 from gazebo_msgs.msg import LinkStates
 from geometry_msgs.msg import PoseStamped, TwistStamped, Twist
+from sensor_msgs.msg import Imu
 import numpy as np
 import math
 from message_filters import Subscriber, ApproximateTimeSynchronizer
@@ -17,9 +18,10 @@ class EkfOdom(Node):
         super().__init__('ekf_odom')
         self.log = self.get_logger().info("Initialized EKF Odom")
         qos = QoSProfile(depth=10)
-        self.create_subscription('/cmd_vel',self.controlCallback, 10)
+        self.create_subscription(Twist, '/cmd_vel',self.controlCallback, 10)
         self.twist_sub = Subscriber(self, TwistStamped, "/tb3/ground_truth/twist")
         self.pose_sub = Subscriber(self, PoseStamped, "/tb3/ground_truth/pose")
+        self.imu_sub = Subscriber(self, Imu, '/imu')
         
 
         # Define Sync Timer
@@ -28,8 +30,8 @@ class EkfOdom(Node):
 
         queue_size = 10
         max_delay = 0.05
-        self.time_sync = ApproximateTimeSynchronizer([self.twist_sub, self.pose_sub],
-                                                     queue_size, max_delay)
+        self.time_sync = ApproximateTimeSynchronizer([self.pose_sub,self.twist_sub,  self.imu_sub],
+                                                     queue_size=queue_size, slop=max_delay)
         self.time_sync.registerCallback(self.SyncCallback)
 
         # Define constants
@@ -58,20 +60,25 @@ class EkfOdom(Node):
         self.last_time = 0
         self.slop = self.declare_parameter('slop', 0.2).get_parameter_value().double_value
 
+        # Define C matrix
         self.C = np.array([
-            [0,0,0,1/r_w, R/r_w],
-            [0,0,0,1/r_w, -R/r_w],
+            [0,0,0,1/self.r_w, self.R/self.r_w],
+            [0,0,0,1/self.r_w, -self.R/self.r_w],
             [0,0,0,0,1]])
 
 
-    def SyncCallback(self, pos_msg: PoseStamped, twist_msg: TwistStamped):
+    def SyncCallback(self, pos_msg: PoseStamped, twist_msg: TwistStamped, imu_msg: Imu):
         # Read Pose Info
         x_m = pos_msg.pose.position.x
         y_m = pos_msg.pose.position.y
-        qz = pos_msg.pose.orientation.z
-        qw = pos_msg.pose.orientation.w
         pose_sec = pos_msg.header.stamp.sec
         pose_nanosec = pos_msg.header.stamp.nanosec*1e-9
+
+        # Read imu Info
+        qz = imu_msg.orientation.z
+        qw = imu_msg.orientation.w
+        imu_sec = imu_msg.header.stamp.sec
+        imu_nanosec = imu_msg.header.stamp.nanosec*1e-9
         theta_m = math.atan2(2 * qz* qw, 1-2 * qz * qz)
 
         # Read twist Info
@@ -80,7 +87,7 @@ class EkfOdom(Node):
         twist_sec = twist_msg.header.stamp.sec
         twist_nanosec = twist_msg.header.stamp.nanosec*1e-9
         self.get_logger().info(f'Sync callback with {pose_sec} and {twist_sec} as times')
-        t_now = min(pose_sec+pose_nanosec, twist_sec+twist_nanosec)
+        t_now = min(pose_sec+pose_nanosec, twist_sec+twist_nanosec, imu_sec+imu_nanosec)
         z=np.array([x_m, y_m, theta_m, v_m, w_m])
 
         # Calculate Time
@@ -102,15 +109,22 @@ class EkfOdom(Node):
         self.u_v = msg.linear.x
         self.u_w = msg.angular.z
 
-    # def heartbeat(self):
-    #     self.log.info('heartbeat')
+    # Define B matrix
+    def B_matrix(self, av, aw):
+        return np.array([
+            [0.0,0.0],
+            [0.0,0.0],
+            [0.0,0.0],
+            [(1.0-av)*self.Gv, 0.0],
+            [0.0, (1.0-aw) * self.Gw]])
 
     def predict(self, dt):
         X,Y,theta,v,w = self.x
 
         av = 10**(-(dt / self.tau_v))
         aw = 10**(-(dt / self.tau_w))
-
+        
+        # Processing dynamics
         X1 = X + dt * v * math.cos(theta)
         Y1 = Y + dt * v * math.sin(theta)
         theta1 = theta + dt * w
@@ -125,35 +139,64 @@ class EkfOdom(Node):
             [0, 0, 0, av, 0],
             [0, 0, 0, 0, aw]
             ])
+        B = self.B_matrix(av, aw)
+
+        # Noise
         Q = self.Q * dt
         self.P = F @ self.P @ F.T + Q
-
-        # B = np.array([
-        #     [0, 0],
-        #     [0, 0],
-        #     [0, 0],
-        #     [(1-av) * 2.0, 0],
-        #     [0, (1-aw) * 0.5]
-        #     ])
+        self.get_logger().info(f"B=\n{B}\nC=\n{self.C}")
         
 
     def update(self, z):
-        pass
+        # Processing Measurement model
+        H=np.eye(5)
+        y=z-self.x
+        S=self.P+self.R_mea
+        K=self.P @ np.linalg.inv(S)
+        self.x = self.x + K@y
+        self.P = (np.eye(5) - K) @ self.P
 
 
     def publish_odom(self, t):
-        pass
+        X, Y, theta, v, w = self.x
+        msg = Odometry()
+        msg.header.frame_id = 'odom'
+        msg.child_frame_id = 'base_link'
+        msg.header.stamp.sec = int(t)
+        msg.header.stamp.nanosec = int((t-int(t))*1e-9) 
+
+        msg.pose.pose.position.x = float(X)
+        msg.pose.pose.position.y = float(Y)
+        msg.pose.pose.orientation.z = math.sin(theta / 2.0)
+        msg.pose.pose.orientation.w = math.cos(theta / 2.0)
+
+        msg.twist.twist.linear.x = float(v)
+        msg.twist.twist.angular.z = float(w)
+
+        # Put in covariance
+        P = self.P
+        pose_cov = [0.0] * 36
+        twist_cov = [0.0] * 36
+
+        pose_cov[0*6 + 0] = float(P[0, 0])
+        pose_cov[1*6 + 1] = float(P[1, 1])
+        pose_cov[5*6 + 5] = float(P[2, 2])
+        pose_cov[0*6 + 1] = float(P[0, 1]); pose_cov[1*6 + 0] = float(P[1, 0])
+        pose_cov[0*6 + 5] = float(P[0, 2]); pose_cov[5*6 + 0] = float(P[2, 0])
+        pose_cov[1*6 + 5] = float(P[1, 2]); pose_cov[5*6 + 1] = float(P[2, 1])
+
+        twist_cov[0*6 + 0] = float(P[3, 3])
+        twist_cov[5*6 + 5] = float(P[4, 4])
+        twist_cov[0*6 + 5] = float(P[3, 4]); twist_cov[5*6 + 0] = float(P[4, 3])
+
+        msg.pose.covariance = pose_cov
+        msg.twist.covariance = twist_cov
+
+        self.odom_pub.publish(msg)
 
     def spin(self):
         rclpy.spin(self)
     
-    
-    def B_matrix(self):
-        
-        return B
-    
-    
-
 
 def main():
     rclpy.init()
