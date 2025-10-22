@@ -25,9 +25,6 @@ class EkfOdom(Node):
         
 
         # Define Sync Timer
-        # self.timer = self.create_timer(1, self.TimerCallback)
-        # self.second_timer = self.create_timer(1.05, self.SecondTimerCallback)
-
         queue_size = 10
         max_delay = 0.05
         self.time_sync = ApproximateTimeSynchronizer([self.pose_sub,self.twist_sub,  self.imu_sub],
@@ -178,16 +175,20 @@ class EkfOdom(Node):
         pose_cov = [0.0] * 36
         twist_cov = [0.0] * 36
 
-        pose_cov[0*6 + 0] = float(P[0, 0])
-        pose_cov[1*6 + 1] = float(P[1, 1])
-        pose_cov[5*6 + 5] = float(P[2, 2])
-        pose_cov[0*6 + 1] = float(P[0, 1]); pose_cov[1*6 + 0] = float(P[1, 0])
-        pose_cov[0*6 + 5] = float(P[0, 2]); pose_cov[5*6 + 0] = float(P[2, 0])
-        pose_cov[1*6 + 5] = float(P[1, 2]); pose_cov[5*6 + 1] = float(P[2, 1])
+        pose_cov[0] = float(P[0, 0])
+        pose_cov[7] = float(P[1, 1])
+        pose_cov[35] = float(P[2, 2])
+        pose_cov[1] = float(P[0, 1])
+        pose_cov[6] = float(P[1, 0])
+        pose_cov[5] = float(P[0, 2]) 
+        pose_cov[30] = float(P[2, 0])
+        pose_cov[11] = float(P[1, 2])
+        pose_cov[31] = float(P[2, 1])
 
-        twist_cov[0*6 + 0] = float(P[3, 3])
-        twist_cov[5*6 + 5] = float(P[4, 4])
-        twist_cov[0*6 + 5] = float(P[3, 4]); twist_cov[5*6 + 0] = float(P[4, 3])
+        twist_cov[0] = float(P[3, 3])
+        twist_cov[35] = float(P[4, 4])
+        twist_cov[5] = float(P[3, 4])
+        twist_cov[30] = float(P[4, 3])
 
         msg.pose.covariance = pose_cov
         msg.twist.covariance = twist_cov
