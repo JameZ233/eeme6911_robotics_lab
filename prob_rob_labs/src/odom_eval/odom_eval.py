@@ -19,7 +19,7 @@ class OdomEval(Node):
 
         # Define Sync Timer
         queue_size = 10
-        max_delay = 0.05
+        max_delay = 0.02
         self.time_sync = ApproximateTimeSynchronizer([self.pose_sub,self.ekf_sub],
                                                      queue_size=queue_size, slop=max_delay)
         self.time_sync.registerCallback(self.SyncCallback)
