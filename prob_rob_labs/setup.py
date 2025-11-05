@@ -33,6 +33,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'ekf_vision1 = ekf_vision1.ekf_vision1:main',
             'odom_eval = odom_eval.odom_eval:main',
             'ekf_odom = ekf_odom.ekf_odom:main',
             'bayes_estimator = bayes_estimator.bayes_estimator:main',
