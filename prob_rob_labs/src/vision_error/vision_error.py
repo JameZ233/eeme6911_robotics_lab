@@ -62,12 +62,14 @@ class VisionError(Node):
         x, y, z = msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z
         Xc, Yc, Zc = transform(tf, x, y, z)
 
+        Xl, Yl, Zl = transform(tf, 0,0,0.25)
         # Ground Truth of distance and bearing
-        d_true = math.hypot(Xc, Zc)
-        theta_true = -math.atan2(Xc, Zc)
+        d_true = math.hypot((Xc-Xl), (Zc-Zl))
+        theta_true =-math.atan2((Xl-Xc), (Zl-Zc))
 
         # Errors
         e_d = self.d_meas - d_true
+        # e_theta = self.theta_meas - theta_true
         e_theta = wrap_angle(self.theta_meas - theta_true)
 
         # Publish error

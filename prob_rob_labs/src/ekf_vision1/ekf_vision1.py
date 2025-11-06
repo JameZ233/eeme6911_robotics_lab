@@ -13,12 +13,17 @@ from prob_rob_msgs.msg import Point2DArrayStamped
 # Height and axis estimation function
 def estimate(points):
     # Parse corner points from input dictionary
-    xs = np.array([float(p.x) for p in points], dtype=float)
-    ys = np.array([float(p.y) for p in points], dtype=float)
+    pts = [(float(p.x), float(p.y)) for p in points] if points else []
+    # Stop to calculate if out of sight
+    if len(pts) <4:
+        return None, None
+    
+    xs = np.array([pt[0] for pt in pts], dtype=float)
+    ys = np.array([pt[1] for pt in pts], dtype=float)
 
     # Compute Height
-    y_top, y_bottom = np.min(ys), np.max(ys)
-    height = y_bottom - y_top
+    y_top, y_bottom = np.max(ys), np.min(ys)
+    height = y_top - y_bottom
 
     # Split left and right points using median x
     x_med = np.median(xs)
@@ -74,7 +79,7 @@ class EkfVision1(Node):
         self.landmark_color = self.get_parameter("landmark_color").get_parameter_value().string_value
         self.landmark_height = self.get_parameter("landmark_height").get_parameter_value().double_value
 
-        # Minimum parameters for calculation
+        # Minimum parameters for stop detection
         self.declare_parameter("min_points", 6)      
         self.declare_parameter("min_height_px", 8.0) 
         self.declare_parameter("timeout_sec", 0.75)  
@@ -131,7 +136,8 @@ class EkfVision1(Node):
             return
 
         
-        height, x_axis = estimate(msg.points)
+        x_axis, height= estimate(msg.points)
+        # self.get_logger().info(f"ytop {y_top} | ybottom {y_bottom}")
         state, info = is_visible(
             points=msg.points,
             h_px=height,

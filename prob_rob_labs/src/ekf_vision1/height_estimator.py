@@ -6,8 +6,8 @@ def estimate(points):
     xs, ys = pts[:,0], pts[:,1]
 
     # Compute Height
-    y_top, y_bottom = np.min(ys), np.max(ys)
-    height = y_bottom - y_top
+    y_top, y_bottom = np.max(ys), np.min(ys)
+    height = y_top - y_bottom
 
     # Split left and right points using median x
     x_med = np.median(xs)
