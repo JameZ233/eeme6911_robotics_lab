@@ -99,7 +99,7 @@ class EkfVision1(Node):
         self.create_subscription(Point2DArrayStamped, color(self.landmark_color), self.corners_cb, 10)
 
         # Publisher
-        self.pub_pose = self.create_publisher(Pose2D, "/landmark/relative_pose", 10)
+        self.pub_pose = self.create_publisher(Pose2D, "/landmark/position", 10)
 
         # Timer to check timeout
         self.create_timer(0.1, self._visibility_check)
