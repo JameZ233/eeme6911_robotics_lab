@@ -1,0 +1,20 @@
+landmarks:
+  red:
+    x: 8.5
+    y: -5.0
+
+  green:
+    x: 8.5
+    y: 5.0
+
+  yellow:
+    x: -11.5
+    y: 5.0
+
+  magenta:
+    x: -11.5
+    y: -5.0
+
+  cyan:
+    x: 0.0
+    y: 0.0
