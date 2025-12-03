@@ -4,6 +4,7 @@ from rclpy.time import Time
 
 import math
 import numpy as np
+import yaml
 
 from sensor_msgs.msg import CameraInfo
 from geometry_msgs.msg import Pose2D
@@ -46,7 +47,7 @@ def estimate(points):
 
     return x_axis, height
 
-def color(color) -> str:
+def color_topic(color) -> str:
     return f"/vision_{color.strip().lower()}/corners"
 
 
@@ -73,11 +74,14 @@ class EkfVision1(Node):
     def __init__(self):
         super().__init__('ekf_vision1')
         # Parameters
-        self.declare_parameter("landmark_color", "cyan")  
         self.declare_parameter("landmark_height", 0.5)
+        self.declare_parameter("map_file", "")
 
-        self.landmark_color = self.get_parameter("landmark_color").get_parameter_value().string_value
         self.landmark_height = self.get_parameter("landmark_height").get_parameter_value().double_value
+        map_file = self.get_parameter("map_file").get_parameter_value().string_value
+        self.landmarks = self._load_map(map_file)
+        self.colors = list(self.landmarks.keys())
+        self.get_logger().info(f"Loaded {len(self.colors)} landmarks from map: {self.colors}")
 
         # Minimum parameters for stop detection
         self.declare_parameter("min_points", 6)      
@@ -96,24 +100,43 @@ class EkfVision1(Node):
         self.img_width = None 
 
         # Last time corners were seen
-        self.last_seen: Time | None = None
-        self.was_visible = False 
+        self.last_seen = {c: None for c in self.colors} 
+        self.was_visible = {c: False for c in self.colors}    
 
-        # Subscriptions
+        # Subscriptions for camera and landmarks
         self.create_subscription(CameraInfo, "/camera/camera_info", self.camera_info, 10)
-        self.create_subscription(Point2DArrayStamped, color(self.landmark_color), self.corners_cb, 10)
+        self._subs = []
+        self.pub_pose = {}
+        for color in self.colors:
+            topic = color_topic(color)
+            sub = self.create_subscription(
+                Point2DArrayStamped,
+                topic,
+                self._corners_cb(color),
+                10
+            )
+            self._subs.append(sub)
 
-        # Publisher
-        self.pub_pose = self.create_publisher(Pose2D, "/landmark/position", 10)
+            # Publisher
+            pose_topic = f"/landmark/{color}/position"
+            self.pub_pose[color] = self.create_publisher(Pose2D, pose_topic, 10)
+
+            self.get_logger().info(f"Color '{color}': subscribe {topic}, publish {pose_topic}")
 
         # Timer to check timeout
         self.create_timer(0.1, self._visibility_check)
-
-        self.get_logger().info(
-            f"Listening to: {'/camera/camera_info'} and {color(self.landmark_color)} | "
-            f"height={self.landmark_height:.3f} m, color='{self.landmark_color}'"
-        )
     
+    def _load_map(self, path: str):
+        with open(path, "r") as f:
+            data = yaml.safe_load(f)
+
+        landmarks_raw = data["landmarks"]
+        landmarks = {}
+        for color, info in landmarks_raw.items():
+            x = float(info["x"])
+            y = float(info["y"])
+            landmarks[color.strip().lower()] = {"x": x, "y": y}
+        return landmarks
     
     def camera_info(self, msg: CameraInfo):
         # Read from camera info message
@@ -129,66 +152,71 @@ class EkfVision1(Node):
 
         
 
-    def corners_cb(self, msg: Point2DArrayStamped):
-        if self.fx is None or self.fy is None:
-            # Wait until we have camera intrinsics
-            self.get_logger().warn("CameraInfo not received yet.")
-            return
+    def _corners_cb(self, color):
+        def cb(msg: Point2DArrayStamped):
+            if self.fx is None or self.fy is None:
+                # Wait until we have camera intrinsics
+                self.get_logger().warn("CameraInfo not received yet.")
+                return
 
-        
-        x_axis, height= estimate(msg.points)
-        # self.get_logger().info(f"ytop {y_top} | ybottom {y_bottom}")
-        state, info = is_visible(
-            points=msg.points,
-            h_px=height,
-            x_axis_px=x_axis,
-            img_width=self.img_width,
-            min_points=self.min_points,
-            min_height_px=self.min_height_px
-        )
+            
+            x_axis, height= estimate(msg.points)
+            
+            state, info = is_visible(
+                points=msg.points,
+                h_px=height,
+                x_axis_px=x_axis,
+                img_width=self.img_width,
+                min_points=self.min_points,
+                min_height_px=self.min_height_px
+            )
 
-        if not state:
-            if self.was_visible:  # only log once when transitioning to not-visible
-                self.get_logger().warn(f"Landmark not visible {info}. Stopping publish.")
-            self.was_visible = False
-            self.last_seen = None
-            return
-        
-        # Bearing angle
-        theta = math.atan((self.cx - x_axis) / self.fx)
-        # Distance
-        d = (self.landmark_height * self.fy) / (height * math.cos(theta)) 
+            if not state:
+                # self.get_logger().info(f"{color} Landmark not visible: {self.was_visible}, color string: {self.was_visible['red']}")
+                if self.was_visible[color]:  # only log once when transitioning to not-visible
+                    self.get_logger().warn(f"{color} Landmark not visible {info}. Stopping publish.")
+                self.was_visible[color] = False
+                self.last_seen[color] = None
+                return
+            
+            # Bearing angle
+            theta = math.atan((self.cx - x_axis) / self.fx)
+            # Distance
+            d = (self.landmark_height * self.fy) / (height * math.cos(theta)) 
 
 
-        # Publish
-        out = Pose2D()
-        out.x = float(d)   
-        out.y = 0.0            
-        out.theta = float(theta)
-        self.pub_pose.publish(out)
+            # Publish
+            out = Pose2D()
+            out.x = float(d)   
+            out.y = 0.0            
+            out.theta = float(theta)
+            self.pub_pose[color].publish(out)
 
-        self.last_seen = self.get_clock().now()
-        if not self.was_visible:
-            self.get_logger().info("Landmark visible again.")
-        self.was_visible = True
+            self.last_seen[color] = self.get_clock().now()
+            if not self.was_visible[color]:
+                self.get_logger().info(f"{color} Landmark visible again.")
+            self.was_visible[color] = True
 
-        self.get_logger().info(
-            f"distance={d:.2f} m | bearing={math.degrees(theta):.2f} deg | "
-            f"height={height:.1f}, x_axis_pos={x_axis:.1f}"
-        )
+            self.get_logger().info(
+                f"{color} distance={d:.2f} m | bearing={math.degrees(theta):.2f} deg | "
+                f"height={height:.1f}, x_axis_pos={x_axis:.1f}"
+            )
+        return cb
 
 
     def _visibility_check(self):
-
-        if self.last_seen is None:
-            return
-        age = (self.get_clock().now() - self.last_seen).nanoseconds * 1e-9
-        if age > self.timeout_sec and self.was_visible:
-            self.was_visible = False
-            self.last_seen = None
-            self.get_logger().warn(
-                f"No corners for {age:.2f}s (> {self.timeout_sec}s). Stopping publish."
-            )
+        now = self.get_clock().now()
+        for color in self.colors:
+            last = self.last_seen[color]
+            if last is None:
+                continue
+            age = (now - last).nanoseconds * 1e-9
+            if age > self.timeout_sec and self.was_visible[color]:
+                self.was_visible[color] = False
+                self.last_seen[color] = None
+                self.get_logger().warn(
+                    f"{color} No corners for {age:.2f}s (> {self.timeout_sec}s). Stopping publish."
+                )
 
 
     def spin(self):

@@ -23,6 +23,11 @@ def generate_launch_description():
             default_value='0.5',
             description='landmark height in meters'
         ),
+        DeclareLaunchArgument(
+            "map_file",
+            default_value="/home/jianzai/ros2_ws/src/eeme6911_robotics_lab/prob_rob_labs/src/ekf_filter/landmarks.yaml",
+            description="Path to landmark map file"
+        ),
 
         Node(
             package='prob_rob_labs',        
@@ -33,6 +38,7 @@ def generate_launch_description():
                 'use_sim_time': LaunchConfiguration('use_sim_time'),
                 'landmark_color': LaunchConfiguration('landmark_color'),
                 'landmark_height': LaunchConfiguration('landmark_height'),
+                "map_file": LaunchConfiguration("map_file"),
             }]
         )
     ])
