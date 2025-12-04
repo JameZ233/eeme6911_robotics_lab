@@ -33,6 +33,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'ekf_tf_odom = ekf_tf_odom.ekf_tf_odom:main',
             'ekf_error = ekf_error.ekf_error:main',
             'ekf_filter = ekf_filter.ekf_filter:main',
             'vision_error = vision_error.vision_error:main',
