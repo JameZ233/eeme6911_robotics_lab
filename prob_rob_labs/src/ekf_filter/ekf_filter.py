@@ -192,7 +192,7 @@ class EkfFilter(Node):
     def _publish_pose(self, stamp):
         msg = PoseWithCovarianceStamped()
         msg.header.stamp = stamp
-        msg.header.frame_id = "map"
+        msg.header.frame_id = "odom"
 
         x, y, theta = self.x.flatten()
 
