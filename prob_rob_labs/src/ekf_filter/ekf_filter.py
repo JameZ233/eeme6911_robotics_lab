@@ -50,7 +50,7 @@ class EkfFilter(Node):
         self.last_omega = 0.0
         self.state_time: Time | None = None
 
-        self.create_subscription(Odometry, '/odometry/filtered', self._odom_cb, 10)
+        self.create_subscription(Odometry, '/odom', self._odom_cb, 10)
         self.subs = []
         for color in self.colors:
             topic = f"/landmark/{color}/position"
@@ -80,7 +80,7 @@ class EkfFilter(Node):
     def _odom_cb(self, msg: Odometry):
         v = msg.twist.twist.linear.x
         omega = msg.twist.twist.angular.z
-        t = Time.from_msg(msg.header.stamp)
+        t = self.get_clock().now()
         
         if self.state_time is None:
             self.state_time = t
