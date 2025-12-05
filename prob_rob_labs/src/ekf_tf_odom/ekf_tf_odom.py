@@ -1,10 +1,8 @@
 import rclpy
 from rclpy.node import Node
-
 import math
 import numpy as np
-
-from geometry_msgs.msg import PoseWithCovarianceStamped, TransformStamped
+from geometry_msgs.msg import PoseWithCovarianceStamped, TransformStamped, Quaternion
 import tf2_ros
 
 def q2y(q):
@@ -13,11 +11,10 @@ def q2y(q):
     cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
     return math.atan2(siny_cosp, cosy_cosp)
 
-
 def y2q(yaw):
     # Yaw to quaternion
     half = yaw / 2.0
-    q = type('Q', (), {})()
+    q = Quaternion()
     q.x = 0.0
     q.y = 0.0
     q.z = math.sin(half)
@@ -31,15 +28,12 @@ class EkfTfOdom(Node):
 
     def __init__(self):
         super().__init__('ekf_tf_odom')
-        # TF buffer to read odom
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
-        # TF map -> odom
         self.tf_broadcaster = tf2_ros.TransformBroadcaster(self)
         self.map_odom_tf: TransformStamped | None = None
 
-        # Subscribe
         self.create_subscription(
             PoseWithCovarianceStamped,
             '/ekf_pose',
@@ -53,12 +47,10 @@ class EkfTfOdom(Node):
         self.get_logger().info("Odom TF publisher started.")
 
     def _ekf_pose_cb(self, msg: PoseWithCovarianceStamped):
-        # Pose of base_link in map frame
         x_map_base = msg.pose.pose.position.x
         y_map_base = msg.pose.pose.position.y
         yaw_map_base = q2y(msg.pose.pose.orientation)
 
-        # odom -> base_link transform
         try:
             tf_odom_base = self.tf_buffer.lookup_transform(
                 'odom', 'base_link', rclpy.time.Time()
@@ -71,7 +63,6 @@ class EkfTfOdom(Node):
         y_odom_base = tf_odom_base.transform.translation.y
         yaw_odom_base = q2y(tf_odom_base.transform.rotation)
 
-        # map->odom
         yaw_map_odom = normalize_angle(yaw_map_base - yaw_odom_base)
         R_map_odom = np.array([
             [math.cos(yaw_map_odom), -math.sin(yaw_map_odom)],
@@ -82,7 +73,6 @@ class EkfTfOdom(Node):
 
         t_map_odom = t_map_base - R_map_odom @ t_odom_base
 
-        # Build TF message
         tf_msg = TransformStamped()
         tf_msg.header.frame_id = 'map'
         tf_msg.child_frame_id = 'odom'

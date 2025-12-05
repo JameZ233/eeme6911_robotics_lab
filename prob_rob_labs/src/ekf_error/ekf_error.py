@@ -1,8 +1,6 @@
 import rclpy
 from rclpy.node import Node
-
 import math
-
 from geometry_msgs.msg import PoseWithCovarianceStamped, Pose2D, PoseStamped
 
 def q2y(q):
@@ -15,26 +13,21 @@ def normalize_angle(a):
     return (a + math.pi) % (2.0 * math.pi) - math.pi
 
 class EkfError(Node):
-
     def __init__(self):
-        super().__init__('ekf_error')
-        
-        # Setup last pose
+        super().__init__('ekf_error')        
         self.gt_pose = None
         self.ekf_pose = None
 
-        # Subscribers
         self.create_subscription(PoseStamped,
                                  '/tb3/ground_truth/pose', self._gt_cb, 10)
         self.create_subscription(PoseWithCovarianceStamped,
                                  '/ekf_pose', self._ekf_cb, 10)
         
-        # Publishers
         self.err_pose_pub = self.create_publisher(Pose2D, '/ekf_error/pose', 10)
 
         self.get_logger().info("EKF error node started. Subscribing to /ground_truth and /ekf_pose.")
 
-    def _gt_cb(self, msg: PoseWithCovarianceStamped):
+    def _gt_cb(self, msg: PoseStamped):
         x = msg.pose.position.x
         y = msg.pose.position.y
         theta = q2y(msg.pose.orientation)
