@@ -149,7 +149,7 @@ class EkfVision1(Node):
     def _handle_corners(self, msg: Point2DArrayStamped, color: str):
         if self.fx is None or self.fy is None:
             # Wait until we have camera intrinsics
-            self.get_logger().warn_once("CameraInfo not received yet.")
+            self.get_logger().info("CameraInfo not received yet.")
             return
         
         x_axis, height = estimate(msg.points)
