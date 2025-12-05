@@ -10,9 +10,8 @@ from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Pose2D, PoseWithCovarianceStamped
 from functools import partial
 
-# TODO: James to find the exact offset between camera and robot
-# This can be done by running "ros2 run tf2_ros tf2_echo base_link camera_rgb_frame"
-CAMERA_OFFSET = 0.0
+CAMERA_OFFSET_X = 0.076
+CAMERA_OFFSET_Y = 0.0
 
 def normalize_angle(angle):
     """Wrap angle to [-pi, pi]."""
@@ -157,8 +156,8 @@ class EkfFilter(Node):
 
     def _update(self, r_meas: float, phi_meas: float, lx: float, ly: float):
         x, y, theta = self.x.flatten()
-        x_cam = x + CAMERA_OFFSET * math.cos(theta)
-        y_cam = y + CAMERA_OFFSET * math.sin(theta)
+        x_cam = x + CAMERA_OFFSET_X * math.cos(theta) - CAMERA_OFFSET_Y * math.sin(theta)
+        y_cam = y + CAMERA_OFFSET_X * math.sin(theta) + CAMERA_OFFSET_Y * math.cos(theta)
         dx = lx - x_cam
         dy = ly - y_cam
 
