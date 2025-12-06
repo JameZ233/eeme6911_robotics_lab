@@ -59,7 +59,6 @@ class EkfFilter(Node):
             self.subs.append(sub)
 
         self.pose_pub = self.create_publisher(PoseWithCovarianceStamped, '/ekf_pose', 10)
-        self.timer = self.create_timer(1.0/30.0, self._timer_cb)
 
     def _load_map(self, path):
         with open(path, "r") as f:
@@ -82,46 +81,59 @@ class EkfFilter(Node):
         v = msg.twist.twist.linear.x
         omega = msg.twist.twist.angular.z
 
+        t = self.get_clock().now()
+
+        if self.state_time is None:
+            # First time init from odom
+            self.state_time = t
+            self.last_v = v
+            self.last_omega = omega
+            self.get_logger().info("EKF time initialized from odom.")
+            return
+
+        dt = (t - self.state_time).nanoseconds * 1e-9
+
+        if dt < 0.0:
+            self.get_logger().warn(f"Odom: Sampling time (dt={dt:.3f} < 0), discarded.")
+        elif dt > 0.0:
+            # Predict using current odom
+            self._predict(v, omega, dt)
+            self.state_time = t
+
+        # Always store last controls
         self.last_v = v
         self.last_omega = omega
 
-        if self.state_time is None:
-            self.state_time = self.get_clock().now()
-            self.get_logger().info("EKF time initialized from odom.")
-
-    def _timer_cb(self):
-        if self.state_time is None:
-            return
-
-        now = self.get_clock().now()
-        dt = (now - self.state_time).nanoseconds * 1e-9
-
-        if dt <= 0.0:
-            return
-
-        # Prediction
-        self._predict(self.last_v, self.last_omega, dt)
-        self.state_time = now
-
-        self._publish_pose(now.to_msg())
 
     def _measure_cb(self, msg: Pose2D, color: str):
         t = self.get_clock().now()
+
         if self.state_time is None:
             self.state_time = t
-            self.get_logger().info("EKF time initialized.")
+            self.get_logger().info("EKF time initialized from measurement.")
             return
 
+        dt = (t - self.state_time).nanoseconds * 1e-9
+
+        if dt < 0.0:
+            self.get_logger().warn(f"Measurement for {color}: (dt={dt:.3f} < 0), discarded.")
+            return
+
+        # Bring state forward from last state_time to measurement time
+        if dt > 0.0:
+            self._predict(self.last_v, self.last_omega, dt)
+
+        # Landmark position in map frame
         landmark = self.landmarks[color]
         lx = landmark["x"]
         ly = landmark["y"]
 
-        # Update
+        # EKF update using measurement (range, bearing)
         self._update(msg.x, msg.theta, lx, ly)
 
-        self._publish_pose(t.to_msg())
-
+        # Update time and publish pose (ONLY on measurement)
         self.state_time = t
+        self._publish_pose(t.to_msg())
     
     def _predict(self, v: float, omega: float, dt: float):
         x, y, theta = self.x.flatten()
