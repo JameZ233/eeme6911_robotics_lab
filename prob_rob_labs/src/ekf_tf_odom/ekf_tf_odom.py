@@ -41,18 +41,20 @@ class EkfTfOdom(Node):
         self.map_odom_tf: TransformStamped | None = None
 
         self.create_subscription(
+            Odometry,
+            '/odom',
+            self._odom_cb,
+            10
+        )
+
+        self.create_subscription(
             PoseWithCovarianceStamped,
             '/ekf_pose',
             self._ekf_pose_cb,
             10
         )
 
-        self.create_subscription(
-            Odometry,
-            '/odom',
-            self._odom_cb,
-            10
-        )
+
 
         self.create_timer(1.0 / 30.0, self._publish_tf)
 
