@@ -96,11 +96,10 @@ class EkfFilter(Node):
         if dt < 0.0:
             self.get_logger().warn(f"Odom: Sampling time (dt={dt:.3f} < 0), discarded.")
         elif dt > 0.0:
-            # Predict using current odom
+            # Prediction
             self._predict(v, omega, dt)
             self.state_time = t
 
-        # Always store last controls
         self.last_v = v
         self.last_omega = omega
 
@@ -119,19 +118,18 @@ class EkfFilter(Node):
             self.get_logger().warn(f"Measurement for {color}: (dt={dt:.3f} < 0), discarded.")
             return
 
-        # Bring state forward from last state_time to measurement time
+        # prediction
         if dt > 0.0:
             self._predict(self.last_v, self.last_omega, dt)
 
-        # Landmark position in map frame
         landmark = self.landmarks[color]
         lx = landmark["x"]
         ly = landmark["y"]
 
-        # EKF update using measurement (range, bearing)
+        # update
         self._update(msg.x, msg.theta, lx, ly)
 
-        # Update time and publish pose (ONLY on measurement)
+        # Publish pose
         self.state_time = t
         self._publish_pose(t.to_msg())
     
@@ -217,17 +215,17 @@ class EkfFilter(Node):
         msg.pose.pose.orientation.z = math.sin(theta / 2.0)
         msg.pose.pose.orientation.w = math.cos(theta / 2.0)
 
-        # Map 3x3 P to 6x6 ROS covariance
+        # Map to 6x6 covariance
         cov = np.zeros(36, dtype=float)
-        cov[0]  = self.P[0, 0] # xx
-        cov[1]  = self.P[0, 1] # xy
-        cov[5]  = self.P[0, 2] # xth
-        cov[6]  = self.P[1, 0] # yx
-        cov[7]  = self.P[1, 1] # yy
-        cov[11] = self.P[1, 2] # yth
-        cov[30] = self.P[2, 0] # thx
-        cov[31] = self.P[2, 1] # thy
-        cov[35] = self.P[2, 2] # thth
+        cov[0]  = self.P[0, 0] 
+        cov[1]  = self.P[0, 1] 
+        cov[5]  = self.P[0, 2] 
+        cov[6]  = self.P[1, 0] 
+        cov[7]  = self.P[1, 1] 
+        cov[11] = self.P[1, 2] 
+        cov[30] = self.P[2, 0] 
+        cov[31] = self.P[2, 1] 
+        cov[35] = self.P[2, 2] 
         msg.pose.covariance = cov.tolist()
 
         self.pose_pub.publish(msg)
